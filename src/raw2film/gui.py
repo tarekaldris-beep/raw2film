@@ -631,7 +631,7 @@ class MainWindow(QMainWindow):
 </table>""",
         )
 
-        self.grain_size = SliderLog()
+        self.grain_size = SliderLog(continuous=False)
         """Size of simulated film grains."""
         self.grain_size.setMinMaxSteps(3, 12, 30, self.dflt_prf_params["grain_size"])
         film_effects_group.add_option(
@@ -642,7 +642,7 @@ class MainWindow(QMainWindow):
             tool_tip="Size of simulated film grains.",
         )
 
-        self.grain_sigma = Slider()
+        self.grain_sigma = Slider(continuous=False)
         """Variance of simulated film grains. Effects perceived uniformity."""
         self.grain_sigma.setMinMaxTicks(
             0.0, 1.0, 1, 50, self.dflt_prf_params["grain_sigma"]
@@ -665,7 +665,7 @@ class MainWindow(QMainWindow):
             tool_tip="Emulate the resolution and micro-contrast of film.",
         )
 
-        self.sharpening_strength = Slider()
+        self.sharpening_strength = Slider(continuous=False)
         """Amount of sharpening to apply (0 - no sharpening, 1 - full)."""
         self.sharpening_strength.setMinMaxTicks(
             0.0, 1.0, 1, 100, default=self.dflt_prf_params["sharpening_strength"]
@@ -678,7 +678,7 @@ class MainWindow(QMainWindow):
             tool_tip="Amount of sharpening to apply (0 - no sharpening, 1 - full).",
         )
 
-        self.sharpening_sigma = Slider()
+        self.sharpening_sigma = Slider(continuous=False)
         """Sigma used for the sharpening kernel (controls radius)."""
         self.sharpening_sigma.setMinMaxTicks(
             0.1, 3.0, 1, 50, default=self.dflt_prf_params["sharpening_sigma"]
@@ -705,7 +705,7 @@ class MainWindow(QMainWindow):
             "from reflections on the back of the film.",
         )
 
-        self.halation_size = SliderLog()
+        self.halation_size = SliderLog(continuous=False)
         """
         How far the halation spreads. Halation is a warm glow around highlights,
         resulting from reflections on the film backing.
@@ -722,7 +722,7 @@ class MainWindow(QMainWindow):
             "highlights, resulting from reflections on the film backing.",
         )
 
-        self.halation_green = Slider()
+        self.halation_green = Slider(continuous=False)
         """
         How red or yellow the halation is. Specifies how strongly the halation reaches
         into the green sensitive layer.
@@ -742,7 +742,7 @@ class MainWindow(QMainWindow):
             "halation reaches into the green sensitive layer.",
         )
 
-        self.halation_intensity = SliderLog()
+        self.halation_intensity = SliderLog(continuous=False)
         self.halation_intensity.setMinMaxSteps(
             0.5, 4, 50, self.dflt_prf_params["halation_intensity"], 1
         )
@@ -755,7 +755,7 @@ class MainWindow(QMainWindow):
             "highlights, resulting from reflections on the film backing.",
         )
 
-        self.exp_comp = Slider()
+        self.exp_comp = Slider(continuous=False)
         self.exp_comp.setMinMaxTicks(-3, 3, 1, 20, self.dflt_img_params["exp_comp"])
         basic_settings_group.add_option(
             self.exp_comp,
@@ -791,7 +791,7 @@ class MainWindow(QMainWindow):
             "(Shift+T: Tungsten)",
         )
 
-        self.exp_wb = SliderLog()
+        self.exp_wb = SliderLog(continuous=False)
         self.exp_wb.setMinMaxSteps(
             2700, 16000, 120, self.dflt_img_params["exp_kelvin"], -2
         )
@@ -806,7 +806,7 @@ class MainWindow(QMainWindow):
             tool_tip="Adjust white balance in kelvin.",
         )
 
-        self.tint = Slider()
+        self.tint = Slider(continuous=False)
         self.tint.setMinMaxTicks(-1, 1, 1, 100, default=self.dflt_img_params["tint"])
         self.tint.set_color_gradient(
             np.array([2 / 3, 0.14, 0.90277]), np.array([2 / 3, 0.14, 0.40277])
@@ -819,7 +819,7 @@ class MainWindow(QMainWindow):
             tool_tip="Change tint on green-magenta axis.",
         )
 
-        self.chroma_nr = Slider()
+        self.chroma_nr = Slider(continuous=False)
         self.chroma_nr.setMinMaxTicks(0, 10)
         image_correction_group.add_option(
             self.chroma_nr,
@@ -829,7 +829,7 @@ class MainWindow(QMainWindow):
             tool_tip="Strength of chroma noise reduction.",
         )
 
-        self.highlight_burn = Slider()
+        self.highlight_burn = Slider(continuous=False)
         self.highlight_burn.setMinMaxTicks(
             0, 1, 1, 20, default=self.dflt_img_params["highlight_burn"]
         )
@@ -844,7 +844,7 @@ class MainWindow(QMainWindow):
             "(Shift+Up: increase)\n"
             "(Shift+Down: decrease)",
         )
-        self.burn_scale = Slider()
+        self.burn_scale = Slider(continuous=False)
         self.burn_scale.setMinMaxTicks(
             1, 200, default=self.dflt_img_params["burn_scale"]
         )
@@ -881,7 +881,7 @@ class MainWindow(QMainWindow):
             "(Ctrl+R: rotate right)",
         )
 
-        self.rotation = Slider()
+        self.rotation = Slider(continuous=False)
         self.rotation.setMinMaxTicks(
             -90, 90, 1, 4, default=self.dflt_img_params["rotation"]
         )
@@ -895,7 +895,7 @@ class MainWindow(QMainWindow):
             "(Ctrl+Left: rotate left)",
         )
 
-        self.zoom = Slider()
+        self.zoom = Slider(continuous=False)
         self.zoom.setMinMaxTicks(1, 2, 1, 100, default=self.dflt_img_params["zoom"])
         basic_settings_group.add_option(
             self.zoom,
@@ -997,7 +997,7 @@ class MainWindow(QMainWindow):
         luma_dark = 0.4
         chroma = 0.2
         hue_offset = 0.06111111
-        self.red_light = Slider()
+        self.red_light = Slider(continuous=False)
         self.red_light.setMinMaxTicks(-0.75, 0.75, 1, 50)
         self.red_light.set_color_gradient(
             np.array([luma_bright, chroma, hue_offset + 0 / 6]),
@@ -1011,7 +1011,7 @@ class MainWindow(QMainWindow):
             tool_tip="How strong the simulated red light is during printing.\n"
             "Decreases how red the print is.",
         )
-        self.green_light = Slider()
+        self.green_light = Slider(continuous=False)
         self.green_light.setMinMaxTicks(-0.75, 0.75, 1, 50)
         self.green_light.set_color_gradient(
             np.array([luma_bright, chroma, hue_offset + 2 / 6]),
@@ -1025,7 +1025,7 @@ class MainWindow(QMainWindow):
             tool_tip="How strong the simulated green light is during printing.\n"
             "Decreases how green the print is.",
         )
-        self.blue_light = Slider()
+        self.blue_light = Slider(continuous=False)
         self.blue_light.setMinMaxTicks(-0.75, 0.75, 1, 50)
         self.blue_light.set_color_gradient(
             np.array([luma_bright, chroma, hue_offset + 4 / 6]),
@@ -1084,7 +1084,7 @@ class MainWindow(QMainWindow):
             tool_tip="Which print material to emulate. Affects only colors.",
         )
 
-        self.push_pull = Slider()
+        self.push_pull = Slider(continuous=False)
         """
         How much to push or pull the film, adjusting contrast. Works linearly scaling
         the characteristic curve of the film. Not based on measured data, but a rough
@@ -1105,7 +1105,7 @@ class MainWindow(QMainWindow):
             "Not recommended for use with slide film.",
         )
 
-        self.projector_kelvin = SliderLog()
+        self.projector_kelvin = SliderLog(continuous=False)
         """Under what light temperature to view the print or slide."""
         self.projector_kelvin.setMinMaxSteps(
             2700, 16000, 120, self.dflt_prf_params["projector_kelvin"], -2
@@ -1121,7 +1121,7 @@ class MainWindow(QMainWindow):
             tool_tip="Under what light temperature to view the print or slide.",
         )
 
-        self.inversion_gamma = Slider()
+        self.inversion_gamma = Slider(continuous=False)
         """
         The gamma applied using the inversion if 'Inversion' is selected or when
         'idealized curve' is checked."""
@@ -1171,7 +1171,7 @@ class MainWindow(QMainWindow):
         checker_widget_layout.addWidget(self.white_balance)
         profile_settings_group.add_option(checker_widget)
 
-        self.saturation_slider = Slider()
+        self.saturation_slider = Slider(continuous=False)
         self.saturation_slider.setMinMaxTicks(
             0, 2, 1, 100, default=self.dflt_prf_params["sat_adjust"]
         )
@@ -1195,7 +1195,7 @@ class MainWindow(QMainWindow):
             tool_tip="Adjust the saturation in the display color space.",
         )
 
-        self.color_masking = Slider()
+        self.color_masking = Slider(continuous=False)
         """
         How effective the orange color mask of the film is. Value of 1 perfectly
         compensates for color layer cross contamination. An increased value leads to
@@ -1255,7 +1255,7 @@ class MainWindow(QMainWindow):
             tool_tip="What type of border to add to the image.",
         )
 
-        self.canvas_scale = Slider()
+        self.canvas_scale = Slider(continuous=False)
         self.canvas_scale.setMinMaxTicks(
             1, 2, 1, 40, default=self.dflt_img_params["canvas_scale"]
         )
@@ -1285,7 +1285,7 @@ class MainWindow(QMainWindow):
             tool_tip="Aspect ratio of added canvas.",
         )
 
-        self.shadow_comp = Slider()
+        self.shadow_comp = Slider(continuous=False)
         """
         Specify black compensation. For positive values blacks are lifted with a film
         like curves. For negative values shadows are darkened without crushing any
@@ -2529,7 +2529,7 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout()
 
-        quality_slider = Slider()
+        quality_slider = Slider(continuous=False)
         quality_slider.setMinMaxTicks(0, 100)
         quality_slider.setValue(100)
         layout.addWidget(QLabel("JPEG quality:"))

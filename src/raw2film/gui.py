@@ -499,7 +499,7 @@ class MainWindow(QMainWindow):
             "halation_size": 1.0,
             "halation_green_factor": 0.3,
             "projector_kelvin": 6500,
-            "inversion_gamma": 4.0,
+            "inversion_gamma": 3.0,
             "idealized_curve": False,
             "halation_intensity": 1,
             "shadow_comp": 0,
@@ -511,7 +511,7 @@ class MainWindow(QMainWindow):
             "push_pull": 0.0,
             "sharpening_strength": 0.0,
             "sharpening_sigma": 1.0,
-            "color_masking": 1.0,
+            "color_masking": 0.7,
         }
         self.dflt_img_params = {
             "exp_comp": 0,
@@ -1125,7 +1125,7 @@ class MainWindow(QMainWindow):
         """
         The gamma applied using the inversion if 'Inversion' is selected or when
         'idealized curve' is checked."""
-        self.inversion_gamma.setMinMaxTicks(1, 7, 1, 10)
+        self.inversion_gamma.setMinMaxTicks(1, 5, 1, 10)
         profile_settings_group.add_option(
             self.inversion_gamma,
             "Gamma",
@@ -2227,7 +2227,7 @@ class MainWindow(QMainWindow):
                 img_height, img_width, _ = image.shape
                 self.numpy_to_canvas(image, full_height, full_width)
         except AttributeError:
-            self.update_preview(src)
+            QTimer.singleShot(100, lambda: self.update_preview(src))
 
         self.histogram.request_draw()
         self.image.request_draw()

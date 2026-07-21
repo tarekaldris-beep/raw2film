@@ -511,7 +511,7 @@ class MainWindow(QMainWindow):
             "push_pull": 0.0,
             "sharpening_strength": 0.0,
             "sharpening_sigma": 1.0,
-            "color_masking": 0.7,
+            "color_masking": 1.0,
         }
         self.dflt_img_params = {
             "exp_comp": 0,

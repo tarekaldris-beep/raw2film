@@ -1,5 +1,14 @@
 # Raw2Film
 
+### Changes in the fork
+- Double clicking the scrolling button returns the value to the default value.
+- Value can be now manually typed for fine adjustments (not only using the scrolling function)
+- Halation now does not blur the whole photo but only affect the highlights.
+- added the effect "Bloom" that mimics Diffusion filters.
+
+
+
+
 [![PyPI version](https://img.shields.io/pypi/v/raw2film)](https://pypi.org/project/raw2film/)
 [![Docs](https://img.shields.io/badge/docs-online-blue)](https://janlohse.github.io/raw2film/)
 [![CI](https://github.com/JanLohse/raw2film/actions/workflows/python-app.yml/badge.svg)](https://github.com/JanLohse/raw2film/actions/workflows/python-app.yml)

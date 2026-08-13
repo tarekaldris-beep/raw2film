@@ -191,3 +191,7 @@ __pycache__
 20*
 .idea
 *.json
+
+# PyExifTool bundled binaries (downloaded locally)
+src/raw2film/exiftool.exe
+src/raw2film/exiftool_files/

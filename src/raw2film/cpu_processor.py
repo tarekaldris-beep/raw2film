@@ -12,7 +12,11 @@ from spectral_film_lut.xy_lut import apply_2d_lut
 from wgpu import get_default_device
 
 from raw2film import effects
-from raw2film.effects import add_canvas, chroma_nr_filter
+from raw2film.effects import (
+    add_canvas,
+    chroma_nr_filter,
+    compute_white_luma,
+)
 from raw2film.raw_conversion import CANVAS_MODES, crop_rotate_zoom, raw_to_linear
 from raw2film.utils import (
     apply_lut_tetrahedral,
@@ -37,6 +41,8 @@ class CpuProcessor:
         self.tex_lut_1d = None
         self.tex_lut_2d = None
         self.tex_lut_3d = None
+
+        self.halation_white_luma = 1.0
 
         # Comparison dicts
         self.image_param_dict = None
@@ -160,6 +166,7 @@ class CpuProcessor:
         input_lut = negative_film.get_input_lut(exp_kelvin, tint, exp_comp)
 
         self.tex_lut_2d = input_lut
+        self.halation_white_luma = compute_white_luma(input_lut)
 
         self.input_param_dict = new_param_dict
 
@@ -307,6 +314,14 @@ class CpuProcessor:
         halation: bool = True,
         halation_size: float = 1.0,
         halation_green_factor: float = 0.4,
+        halation_threshold: float = 0.5,
+        halation_softness: float = 0.4,
+        bloom: bool = False,
+        bloom_intensity: float = 1.0,
+        bloom_size: float = 1.0,
+        bloom_threshold: float = 0.8,
+        bloom_softness: float = 0.2,
+        bloom_color: float = 0.6,
         sharpness: bool = True,
         sharpening_strength: float = 0.0,
         sharpening_sigma: float = 1.0,
@@ -373,6 +388,22 @@ class CpuProcessor:
                 halation_green_factor=halation_green_factor,
                 halation_intensity=halation_intensity,
                 bw=negative_film.density_measure == "bw",
+                white_luma=self.halation_white_luma,
+                threshold=halation_threshold,
+                softness=halation_softness,
+            )
+
+        if bloom:
+            green_factor, blue_factor = effects.bloom_color_factors(bloom_color)
+            image = effects.bloom(
+                image,
+                scale,
+                bloom_size=bloom_size,
+                bloom_intensity=bloom_intensity,
+                bloom_threshold=bloom_threshold,
+                bloom_softness=bloom_softness,
+                bloom_green_factor=green_factor,
+                bloom_blue_factor=blue_factor,
             )
 
         log_clip(image)

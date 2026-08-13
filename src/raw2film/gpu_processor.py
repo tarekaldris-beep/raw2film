@@ -18,8 +18,10 @@ from wgpu import TextureUsage, get_default_device
 
 from raw2film import effects
 from raw2film.effects import (
+    bloom_color_factors,
     chroma_nr_filter,
     compute_halation_kernel,
+    compute_white_luma,
     get_canvas_data,
     mtf_kernel,
 )
@@ -127,6 +129,14 @@ class GpuProcessor:
             code=highlight_burn_shader_code
         )
 
+        halation_shader_path = Path(__file__).parent / "shaders/halation.wgsl"
+        halation_shader_code = halation_shader_path.read_text()
+        halation_shader = self.device.create_shader_module(code=halation_shader_code)
+
+        bloom_shader_path = Path(__file__).parent / "shaders/bloom.wgsl"
+        bloom_shader_code = bloom_shader_path.read_text()
+        bloom_shader = self.device.create_shader_module(code=bloom_shader_code)
+
         # create pipelines
         self.pipeline_lut_1d = self.device.create_compute_pipeline(
             layout="auto", compute={"module": lut_1d_shader, "entry_point": "main"}
@@ -180,6 +190,14 @@ class GpuProcessor:
             layout="auto",
             compute={"module": highlight_burn_shader, "entry_point": "final_burn"},
         )
+        self.pipeline_halation = self.device.create_compute_pipeline(
+            layout="auto",
+            compute={"module": halation_shader, "entry_point": "main"},
+        )
+        self.pipeline_bloom = self.device.create_compute_pipeline(
+            layout="auto",
+            compute={"module": bloom_shader, "entry_point": "main"},
+        )
 
         # Init gpu textures
         self.tex_input = None
@@ -202,6 +220,10 @@ class GpuProcessor:
         self.buffer_mtf_kernel_size = None
         self.buffer_halation_kernel = None
         self.buffer_halation_kernel_size = None
+        self.buffer_halation_params = None
+        self.buffer_bloom_kernel = None
+        self.buffer_bloom_kernel_size = None
+        self.buffer_bloom_params = None
         self.buffer_grain_kernel = None
         self.buffer_grain_kernel_size = None
         self.buffer_hist_counts = None
@@ -217,6 +239,7 @@ class GpuProcessor:
         self.output_param_dict = None
         self.mtf_param_dict = None
         self.halation_param_dict = None
+        self.bloom_param_dict = None
         self.grain_kernel_param_dict = None
         self.highlight_burn_param_dict = None
 
@@ -224,6 +247,8 @@ class GpuProcessor:
         self.output_resolution = None
         self.canvas_resolution = None
         self.canvas_color = None
+
+        self.halation_white_luma = 1.0
 
         self.lut_1d_sampler = self.device.create_sampler(
             mag_filter=wgpu.FilterMode.linear,
@@ -495,8 +520,8 @@ class GpuProcessor:
             self.kernel_size_data.tobytes(),
         )
 
-    def _ensure_halation_kernel(self, kernel: np.ndarray):
-        """Set up halation convolution kernel texture."""
+    def _ensure_blur_kernel(self, kernel, buffer_kernel_attr, buffer_size_attr):
+        """Upload a blur kernel buffer and its size uniform to the GPU."""
         h, w = kernel.shape[:2]
 
         kernel_rgba = np.ones((h, w, 4), dtype=np.float32)
@@ -512,36 +537,112 @@ class GpuProcessor:
 
         flat = kernel_rgba.reshape(-1, 4)
 
-        if (
-            self.buffer_halation_kernel is None
-            or self.buffer_halation_kernel.size < flat.nbytes
-        ):
-            self.buffer_halation_kernel = self.device.create_buffer(
+        kernel_buffer = getattr(self, buffer_kernel_attr)
+        if kernel_buffer is None or kernel_buffer.size < flat.nbytes:
+            kernel_buffer = self.device.create_buffer(
                 size=flat.nbytes,
                 usage=(wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST),
             )
+            setattr(self, buffer_kernel_attr, kernel_buffer)
 
         self.queue.write_buffer(
-            self.buffer_halation_kernel,
+            kernel_buffer,
             0,
             flat.tobytes(),
         )
 
-        self.kernel_size_data = np.array(
-            [h, w],
-            dtype=np.uint32,
+        kernel_size_data = np.array([h, w], dtype=np.uint32)
+
+        size_buffer = getattr(self, buffer_size_attr)
+        if size_buffer is None:
+            size_buffer = self.device.create_buffer(
+                size=16,  # uniform alignment
+                usage=(wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST),
+            )
+            setattr(self, buffer_size_attr, size_buffer)
+
+        self.queue.write_buffer(
+            size_buffer,
+            0,
+            kernel_size_data.tobytes(),
         )
 
-        if self.buffer_halation_kernel_size is None:
-            self.buffer_halation_kernel_size = self.device.create_buffer(
-                size=16,  # uniform alignment
+    def _ensure_halation_kernel(self, kernel: np.ndarray):
+        """Set up halation blur kernel buffers."""
+        self._ensure_blur_kernel(
+            kernel, "buffer_halation_kernel", "buffer_halation_kernel_size"
+        )
+
+    def _ensure_bloom_kernel(self, kernel: np.ndarray):
+        """Set up bloom blur kernel buffers."""
+        self._ensure_blur_kernel(
+            kernel, "buffer_bloom_kernel", "buffer_bloom_kernel_size"
+        )
+
+    def _ensure_halation_params(
+        self,
+        white_luma: float,
+        threshold: float,
+        softness: float,
+        intensity: float,
+        factors: np.ndarray,
+    ):
+        """Set up halation parameters uniform buffer."""
+        params_data = struct.pack(
+            "8f",
+            white_luma,
+            threshold,
+            softness,
+            intensity,
+            float(factors[0]),
+            float(factors[1]),
+            float(factors[2]),
+            0.0,
+        )
+
+        if self.buffer_halation_params is None:
+            self.buffer_halation_params = self.device.create_buffer(
+                size=len(params_data),
                 usage=(wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST),
             )
 
         self.queue.write_buffer(
-            self.buffer_halation_kernel_size,
+            self.buffer_halation_params,
             0,
-            self.kernel_size_data.tobytes(),
+            params_data,
+        )
+
+    def _ensure_bloom_params(
+        self,
+        bloom_intensity: float,
+        bloom_threshold: float,
+        bloom_softness: float,
+        green_factor: float,
+        blue_factor: float,
+    ):
+        """Set up bloom parameters uniform buffer."""
+        params_data = struct.pack(
+            "8f",
+            bloom_threshold,
+            bloom_softness,
+            bloom_intensity,
+            1.0,
+            green_factor,
+            blue_factor,
+            0.0,
+            0.0,
+        )
+
+        if self.buffer_bloom_params is None:
+            self.buffer_bloom_params = self.device.create_buffer(
+                size=len(params_data),
+                usage=(wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST),
+            )
+
+        self.queue.write_buffer(
+            self.buffer_bloom_params,
+            0,
+            params_data,
         )
 
     def _ensure_highlight_burn(
@@ -824,8 +925,14 @@ class GpuProcessor:
         halation_blue_factor: float = 0.0,
         halation_intensity: float = 1.0,
         bw: bool = False,
+        white_luma: float | None = None,
+        threshold: float = 0.5,
+        softness: float = 0.4,
     ):
         """Create halation kernel and upload it to the GPU."""
+        if white_luma is None:
+            white_luma = self.halation_white_luma
+
         new_param_dict = {
             "scale": scale,
             "halation_size": halation_size,
@@ -834,24 +941,62 @@ class GpuProcessor:
             "halation_blue_factor": halation_blue_factor,
             "halation_intensity": halation_intensity,
             "bw": bw,
+            "white_luma": white_luma,
+            "threshold": threshold,
+            "softness": softness,
         }
 
         if new_param_dict == self.halation_param_dict:
             return
 
-        kernel = compute_halation_kernel(
-            scale,
-            halation_size,
+        kernel = compute_halation_kernel(scale, halation_size)
+
+        factors = effects.halation_color_factors(
+            1.0,
             halation_red_factor,
             halation_green_factor,
             halation_blue_factor,
-            halation_intensity,
-            bw=bw,
+            bw,
         )
 
         self._ensure_halation_kernel(kernel)
+        self._ensure_halation_params(
+            white_luma, threshold, softness, halation_intensity, factors
+        )
 
         self.halation_param_dict = new_param_dict
+
+    def load_bloom(
+        self,
+        scale: float,
+        bloom_size: float = 1.0,
+        bloom_intensity: float = 1.0,
+        bloom_threshold: float = 0.8,
+        bloom_softness: float = 0.2,
+        bloom_color: float = 0.6,
+    ):
+        """Create bloom kernel and upload it to the GPU."""
+        new_param_dict = {
+            "scale": scale,
+            "bloom_size": bloom_size,
+            "bloom_intensity": bloom_intensity,
+            "bloom_threshold": bloom_threshold,
+            "bloom_softness": bloom_softness,
+            "bloom_color": bloom_color,
+        }
+
+        if new_param_dict == self.bloom_param_dict:
+            return
+
+        kernel = compute_halation_kernel(scale, bloom_size)
+        green_factor, blue_factor = bloom_color_factors(bloom_color)
+
+        self._ensure_bloom_kernel(kernel)
+        self._ensure_bloom_params(
+            bloom_intensity, bloom_threshold, bloom_softness, green_factor, blue_factor
+        )
+
+        self.bloom_param_dict = new_param_dict
 
     def load_highlight_burn(
         self, negative_film: FilmSpectral, highlight_burn: float, burn_scale: float
@@ -896,6 +1041,8 @@ class GpuProcessor:
             return
 
         input_lut = negative_film.get_input_lut(exp_kelvin, tint, exp_comp)
+
+        self.halation_white_luma = compute_white_luma(input_lut)
 
         self._ensure_lut_2d(input_lut)
 
@@ -1100,6 +1247,60 @@ class GpuProcessor:
                     "binding": 3,
                     "resource": {
                         "buffer": buffer_size,
+                    },
+                },
+            ],
+        )
+
+    def _bind_halation(self, tex_a, tex_b):
+        return self.device.create_bind_group(
+            layout=self.pipeline_halation.get_bind_group_layout(0),
+            entries=[
+                {"binding": 0, "resource": tex_a.view},
+                {"binding": 1, "resource": tex_b.view},
+                {
+                    "binding": 2,
+                    "resource": {
+                        "buffer": self.buffer_halation_kernel,
+                    },
+                },
+                {
+                    "binding": 3,
+                    "resource": {
+                        "buffer": self.buffer_halation_kernel_size,
+                    },
+                },
+                {
+                    "binding": 4,
+                    "resource": {
+                        "buffer": self.buffer_halation_params,
+                    },
+                },
+            ],
+        )
+
+    def _bind_bloom(self, tex_a, tex_b):
+        return self.device.create_bind_group(
+            layout=self.pipeline_bloom.get_bind_group_layout(0),
+            entries=[
+                {"binding": 0, "resource": tex_a.view},
+                {"binding": 1, "resource": tex_b.view},
+                {
+                    "binding": 2,
+                    "resource": {
+                        "buffer": self.buffer_bloom_kernel,
+                    },
+                },
+                {
+                    "binding": 3,
+                    "resource": {
+                        "buffer": self.buffer_bloom_kernel_size,
+                    },
+                },
+                {
+                    "binding": 4,
+                    "resource": {
+                        "buffer": self.buffer_bloom_params,
                     },
                 },
             ],
@@ -1581,6 +1782,14 @@ class GpuProcessor:
         halation: bool = True,
         halation_size: float = 1.0,
         halation_green_factor: float = 0.4,
+        halation_threshold: float = 0.5,
+        halation_softness: float = 0.4,
+        bloom: bool = False,
+        bloom_intensity: float = 1.0,
+        bloom_size: float = 1.0,
+        bloom_threshold: float = 0.8,
+        bloom_softness: float = 0.2,
+        bloom_color: float = 0.6,
         sharpness: bool = True,
         sharpening_strength: float = 0.0,
         sharpening_sigma: float = 1.0,
@@ -1672,6 +1881,14 @@ class GpuProcessor:
         halation: bool = True,
         halation_size: float = 1.0,
         halation_green_factor: float = 0.4,
+        halation_threshold: float = 0.5,
+        halation_softness: float = 0.4,
+        bloom: bool = False,
+        bloom_intensity: float = 1.0,
+        bloom_size: float = 1.0,
+        bloom_threshold: float = 0.8,
+        bloom_softness: float = 0.2,
+        bloom_color: float = 0.6,
         sharpness: bool = True,
         sharpening_strength: float = 0.0,
         sharpening_sigma: float = 1.0,
@@ -1723,6 +1940,14 @@ class GpuProcessor:
         halation,
         halation_size,
         halation_green_factor,
+        halation_threshold,
+        halation_softness,
+        bloom,
+        bloom_intensity,
+        bloom_size,
+        bloom_threshold,
+        bloom_softness,
+        bloom_color,
         sharpness,
         sharpening_strength,
         sharpening_sigma,
@@ -1776,14 +2001,35 @@ class GpuProcessor:
                 halation_green_factor=halation_green_factor,
                 halation_intensity=halation_intensity,
                 bw=negative_film.density_measure == "bw",
+                threshold=halation_threshold,
+                softness=halation_softness,
             )
             self._dispatch(
-                self.pipeline_convolution,
-                self._bind_convolution(
+                self.pipeline_halation,
+                self._bind_halation(
                     ping_pong_tex[idx],
                     ping_pong_tex[1 - idx],
-                    self.buffer_halation_kernel,
-                    self.buffer_halation_kernel_size,
+                ),
+                self.pipeline_resolution,
+                encoder=encoder,
+            )
+            idx = 1 - idx
+
+        # Bloom
+        if bloom:
+            self.load_bloom(
+                scale,
+                bloom_size=bloom_size,
+                bloom_intensity=bloom_intensity,
+                bloom_threshold=bloom_threshold,
+                bloom_softness=bloom_softness,
+                bloom_color=bloom_color,
+            )
+            self._dispatch(
+                self.pipeline_bloom,
+                self._bind_bloom(
+                    ping_pong_tex[idx],
+                    ping_pong_tex[1 - idx],
                 ),
                 self.pipeline_resolution,
                 encoder=encoder,

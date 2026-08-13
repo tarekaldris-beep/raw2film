@@ -6,11 +6,55 @@ import time
 
 from PyQt6.QtCore import (
     QObject,
+    Qt,
     pyqtSignal,
     pyqtSlot,
 )
-from PyQt6.QtWidgets import QDialog, QTextEdit, QVBoxLayout
-from spectral_film_lut.gui_objects import AnimatedButton
+from PyQt6.QtWidgets import QDialog, QLineEdit, QTextEdit, QVBoxLayout
+from spectral_film_lut.gui_objects import AnimatedButton, Slider, SliderLog
+
+
+class EditableSliderMixin:
+    """Adds an editable value field and double-click-to-reset behavior to a slider."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._make_value_field_editable()
+        self.slider.mouseDoubleClickEvent = self._reset_to_default
+
+    def _make_value_field_editable(self):
+        self.layout.removeWidget(self.text)
+        self.text.deleteLater()
+
+        value_field = QLineEdit()
+        value_field.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        value_field.setFixedWidth(54)
+        value_field.setFrame(False)
+        value_field.editingFinished.connect(self._apply_typed_value)
+        self.layout.addWidget(value_field)
+        self.text = value_field
+        self.update_text_display()
+
+    def _apply_typed_value(self):
+        try:
+            self.setValue(float(self.text.text()))
+        except (OverflowError, ValueError, ZeroDivisionError):
+            pass
+        self.update_text_display()
+
+    def _reset_to_default(self, event):
+        self.slider.setValue(self.slider.reference_value)
+        event.accept()
+
+
+class EditableSlider(EditableSliderMixin, Slider):
+    """A linear slider with an editable value field and double-click reset."""
+
+
+class EditableSliderLog(EditableSliderMixin, SliderLog):
+    """A logarithmic slider with an editable value field and double-click reset."""
 
 
 class CpuWorker(QObject):

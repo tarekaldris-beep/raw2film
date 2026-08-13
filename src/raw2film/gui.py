@@ -69,8 +69,6 @@ from spectral_film_lut.gui_objects import (
     AnimatedButton,
     AnimatedToolButton,
     HoverLineEdit,
-    Slider,
-    SliderLog,
     WideComboBox,
     Worker,
 )
@@ -78,7 +76,17 @@ from spectral_film_lut.gui_objects import (
 from raw2film import R2F_BASE_DIR, __version__, data, effects, utils
 from raw2film.cpu_processor import CpuProcessor
 from raw2film.gpu_processor import GpuProcessor
-from raw2film.gui_objects import AutoShortcutsDialog, CpuWorker, GpuWorker
+from raw2film.gui_objects import (
+    AutoShortcutsDialog,
+    CpuWorker,
+    GpuWorker,
+)
+from raw2film.gui_objects import (
+    EditableSlider as Slider,
+)
+from raw2film.gui_objects import (
+    EditableSliderLog as SliderLog,
+)
 from raw2film.image_bar import ImageBar
 from raw2film.raw_conversion import raw_to_linear
 from raw2film.utils import add_metadata, generate_histogram, load_metadata
@@ -498,6 +506,14 @@ class MainWindow(QMainWindow):
             "grain_size": 6,
             "halation_size": 1.0,
             "halation_green_factor": 0.3,
+            "halation_threshold": 0.5,
+            "halation_softness": 0.4,
+            "bloom": False,
+            "bloom_intensity": 1.0,
+            "bloom_size": 1.0,
+            "bloom_threshold": 0.8,
+            "bloom_softness": 0.2,
+            "bloom_color": 0.6,
             "projector_kelvin": 6500,
             "inversion_gamma": 3.0,
             "idealized_curve": False,
@@ -744,7 +760,7 @@ class MainWindow(QMainWindow):
 
         self.halation_intensity = SliderLog(continuous=False)
         self.halation_intensity.setMinMaxSteps(
-            0.5, 4, 50, self.dflt_prf_params["halation_intensity"], 1
+            0.5, 10, 50, self.dflt_prf_params["halation_intensity"], 1
         )
         film_effects_group.add_option(
             self.halation_intensity,
@@ -753,6 +769,118 @@ class MainWindow(QMainWindow):
             self.halation_intensity.setValue,
             tool_tip="How intense the halation is. Halation is a warm glow around\n"
             "highlights, resulting from reflections on the film backing.",
+        )
+
+        self.halation_threshold = Slider(continuous=False)
+        """
+        The highlight level at which halation starts to emit light.
+        """
+        self.halation_threshold.setMinMaxTicks(
+            0, 1, 1, 100, self.dflt_prf_params["halation_threshold"]
+        )
+        film_effects_group.add_option(
+            self.halation_threshold,
+            "Halation threshold",
+            self.dflt_prf_params["halation_threshold"],
+            self.halation_threshold.setValue,
+            tool_tip="The highlight level at which halation starts to emit light.\n"
+            "Lower values let more of the image glow softly, higher values\n"
+            "restrict the glow to the brightest areas.",
+        )
+
+        self.halation_softness = Slider(continuous=False)
+        """
+        How gradually the halation fades in around the threshold.
+        """
+        self.halation_softness.setMinMaxTicks(
+            0, 1, 1, 100, self.dflt_prf_params["halation_softness"]
+        )
+        film_effects_group.add_option(
+            self.halation_softness,
+            "Halation softness",
+            self.dflt_prf_params["halation_softness"],
+            self.halation_softness.setValue,
+            tool_tip="How gradually the halation fades in around the threshold.\n"
+            "Higher values produce a softer, more organic transition.",
+        )
+
+        self.bloom = QCheckBox()
+        """
+        Activate bloom, a soft glow emitted by bright areas above a threshold.
+        """
+        film_effects_group.add_option(
+            self.bloom,
+            "Bloom",
+            self.dflt_prf_params["bloom"],
+            self.bloom.setChecked,
+            tool_tip="Activate bloom, a soft glow emitted by bright areas above\n"
+            "a threshold, spilling light into the surrounding area.",
+        )
+
+        self.bloom_intensity = SliderLog(continuous=False)
+        self.bloom_intensity.setMinMaxSteps(
+            0.5, 10, 50, self.dflt_prf_params["bloom_intensity"], 1
+        )
+        film_effects_group.add_option(
+            self.bloom_intensity,
+            "Bloom intensity",
+            self.dflt_prf_params["bloom_intensity"],
+            self.bloom_intensity.setValue,
+            tool_tip="How strong the bloom glow is.",
+        )
+
+        self.bloom_size = SliderLog(continuous=False)
+        self.bloom_size.setMinMaxSteps(0.5, 4, 50, self.dflt_prf_params["bloom_size"])
+        film_effects_group.add_option(
+            self.bloom_size,
+            "Bloom size",
+            self.dflt_prf_params["bloom_size"],
+            self.bloom_size.setValue,
+            tool_tip="How far the bloom glow spreads.",
+        )
+
+        self.bloom_threshold = Slider(continuous=False)
+        self.bloom_threshold.setMinMaxTicks(
+            0, 1, 1, 100, self.dflt_prf_params["bloom_threshold"]
+        )
+        film_effects_group.add_option(
+            self.bloom_threshold,
+            "Bloom threshold",
+            self.dflt_prf_params["bloom_threshold"],
+            self.bloom_threshold.setValue,
+            tool_tip="The brightness above which pixels start to emit bloom.\n"
+            "Higher values restrict bloom to the very brightest areas.",
+        )
+
+        self.bloom_softness = Slider(continuous=False)
+        self.bloom_softness.setMinMaxTicks(
+            0, 1, 1, 100, self.dflt_prf_params["bloom_softness"]
+        )
+        film_effects_group.add_option(
+            self.bloom_softness,
+            "Bloom softness",
+            self.dflt_prf_params["bloom_softness"],
+            self.bloom_softness.setValue,
+            tool_tip="How gradually bloom fades in around the threshold.",
+        )
+
+        self.bloom_color = Slider(continuous=False)
+        """
+        Warm or neutral bloom color.
+        """
+        self.bloom_color.set_color_gradient(
+            np.array([0.6, 0.21, 29.23 / 360]), np.array([0.5, 0.12, 60.0 / 360])
+        )
+        self.bloom_color.setMinMaxTicks(
+            0, 1, 1, 100, self.dflt_prf_params["bloom_color"]
+        )
+        film_effects_group.add_option(
+            self.bloom_color,
+            "Bloom color",
+            self.dflt_prf_params["bloom_color"],
+            self.bloom_color.setValue,
+            tool_tip="Tint of the bloom: warm orange at the left, neutral white\n"
+            "at the right.",
         )
 
         self.exp_comp = Slider(continuous=False)
@@ -1448,6 +1576,28 @@ class MainWindow(QMainWindow):
         self.halation_green.valueChanged.connect(
             lambda x: self.profile_changed(x, "halation_green_factor")
         )
+        self.halation_threshold.valueChanged.connect(
+            lambda x: self.profile_changed(x, "halation_threshold")
+        )
+        self.halation_softness.valueChanged.connect(
+            lambda x: self.profile_changed(x, "halation_softness")
+        )
+        self.bloom.stateChanged.connect(lambda x: self.profile_changed(x, "bloom"))
+        self.bloom_intensity.valueChanged.connect(
+            lambda x: self.profile_changed(x, "bloom_intensity")
+        )
+        self.bloom_size.valueChanged.connect(
+            lambda x: self.profile_changed(x, "bloom_size")
+        )
+        self.bloom_threshold.valueChanged.connect(
+            lambda x: self.profile_changed(x, "bloom_threshold")
+        )
+        self.bloom_softness.valueChanged.connect(
+            lambda x: self.profile_changed(x, "bloom_softness")
+        )
+        self.bloom_color.valueChanged.connect(
+            lambda x: self.profile_changed(x, "bloom_color")
+        )
         self.rotate_right.released.connect(self.rotate_image)
         self.rotate_left.released.connect(lambda: self.rotate_image(-1))
         self.flip_button.released.connect(self.flip_image)
@@ -2048,6 +2198,14 @@ class MainWindow(QMainWindow):
         self.halation_size.setValue(profile_params["halation_size"])
         self.halation_green.setValue(profile_params["halation_green_factor"])
         self.halation_intensity.setValue(profile_params["halation_intensity"])
+        self.halation_threshold.setValue(profile_params["halation_threshold"])
+        self.halation_softness.setValue(profile_params["halation_softness"])
+        self.bloom.setChecked(profile_params["bloom"])
+        self.bloom_intensity.setValue(profile_params["bloom_intensity"])
+        self.bloom_size.setValue(profile_params["bloom_size"])
+        self.bloom_threshold.setValue(profile_params["bloom_threshold"])
+        self.bloom_softness.setValue(profile_params["bloom_softness"])
+        self.bloom_color.setValue(profile_params["bloom_color"])
         self.sharpness.setChecked(profile_params["sharpness"])
         self.sharpening_strength.setValue(profile_params["sharpening_strength"])
         self.sharpening_sigma.setValue(profile_params["sharpening_sigma"])
@@ -2207,6 +2365,7 @@ class MainWindow(QMainWindow):
             processing_args["sharpness"] = False
             processing_args["grain"] = False
             processing_args["halation"] = False
+            processing_args["bloom"] = False
         try:
             if self.context_mode == "wgpu":
                 self.gpu_processor.process(

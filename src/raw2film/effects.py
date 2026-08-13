@@ -15,6 +15,7 @@ from scipy import ndimage
 from spectral_film_lut.config import DEFAULT_DTYPE
 from spectral_film_lut.film_spectral import FilmSpectral
 from spectral_film_lut.grain_generation import generate_grain
+from spectral_film_lut.xy_lut import apply_2d_lut
 
 from raw2film.raw_conversion import CANVAS_MODES
 
@@ -236,31 +237,63 @@ def apply_grain(
     return rgb
 
 
+def bloom_color_factors(color: float) -> tuple[float, float]:
+    """Map a warm->white bloom color slider to green and blue glow factors."""
+    green_factor = 0.4 + 0.6 * color
+    blue_factor = color
+    return green_factor, blue_factor
+
+
 def compute_halation_kernel(
     scale: float,
     halation_size: float = 1.0,
-    halation_red_factor: float = 1.0,
-    halation_green_factor: float = 0.4,
-    halation_blue_factor: float = 0.0,
-    halation_intensity: float = 1.0,
-    bw: bool = False,
 ):
-    if bw:
-        halation_red_factor = halation_green_factor
-        halation_blue_factor = halation_green_factor
+    """Compute a normalized exponential blur kernel for halation (per channel)."""
     kernel = np.asarray(
         exponential_blur_kernel(scale / 4 * halation_size), dtype=DEFAULT_DTYPE
     )
-    kernel = np.dstack([kernel] * 3)
-    color_factors = halation_intensity * np.array(
+    return np.dstack([kernel] * 3)
+
+
+def halation_color_factors(
+    halation_intensity: float,
+    halation_red_factor: float = 1.0,
+    halation_green_factor: float = 0.4,
+    halation_blue_factor: float = 0.0,
+    bw: bool = False,
+) -> np.ndarray:
+    """Per-channel halation glow weights, used to tint and scale the blurred halo."""
+    if bw:
+        halation_red_factor = halation_green_factor
+        halation_blue_factor = halation_green_factor
+    return halation_intensity * np.array(
         [halation_red_factor, halation_green_factor, halation_blue_factor],
         dtype=DEFAULT_DTYPE,
     )
-    kernel *= color_factors
-    size = kernel.shape[0]
-    kernel[size // 2, size // 2, :] += 1.0
-    kernel /= color_factors + 1.0
-    return kernel
+
+
+def compute_white_luma(lut: np.ndarray) -> float:
+    """Compute the developed-film luminance of a neutral white input for a 2D LUT."""
+    white_xyz = np.array([[[1.0, 1.0, 1.0]]], dtype=DEFAULT_DTYPE)
+    white_out = apply_2d_lut(white_xyz, lut)
+    return float(
+        0.2126 * white_out[0, 0, 0]
+        + 0.7152 * white_out[0, 0, 1]
+        + 0.0722 * white_out[0, 0, 2]
+    )
+
+
+def highlight_mask(
+    luma: np.ndarray,
+    white_luma: float = 1.0,
+    threshold: float = 0.5,
+    softness: float = 0.4,
+) -> np.ndarray:
+    """Compute a smooth highlight mask used to gate halation."""
+    normalized = luma / max(white_luma, 1e-6)
+    x = (normalized - threshold) / max(softness, 1e-6)
+    mask = np.clip(x, 0.0, 1.0)
+    return mask * mask * (3.0 - 2.0 * mask)
 
 
 def halation(
@@ -272,18 +305,71 @@ def halation(
     halation_blue_factor: float = 0.0,
     halation_intensity: float = 1.0,
     bw: bool = False,
+    white_luma: float = 1.0,
+    threshold: float = 0.5,
+    softness: float = 0.4,
 ) -> np.ndarray:
-    """A halation image processing effect."""
-    kernel = compute_halation_kernel(
-        scale,
-        halation_size,
+    """A halation image processing effect.
+
+    Only highlights emit a soft, warm glow that spills into the surrounding area.
+    The glow is normalized by its own luminance, which keeps the tint warm (never
+    blue/cyan) while staying soft and organic. Regions without glow are returned
+    exactly unchanged.
+    """
+    kernel = compute_halation_kernel(scale, halation_size)
+    luma = 0.2126 * rgb[..., 0] + 0.7152 * rgb[..., 1] + 0.0722 * rgb[..., 2]
+    mask = highlight_mask(luma, white_luma, threshold, softness)
+
+    # Only highlights emit light
+    halo = convolve_2d(rgb * mask[..., np.newaxis], kernel)
+
+    # Original-style normalized blend: (image + tinted glow) / (tint + 1)
+    factors = halation_color_factors(
+        halation_intensity,
         halation_red_factor,
         halation_green_factor,
         halation_blue_factor,
-        halation_intensity,
         bw,
     )
-    rgb = convolve_2d(rgb, kernel)
+    glow = halo * factors
+    # Normalize by the glow's luminance (a single scalar) instead of per-channel
+    # factors, so highlights get warmer but never shift toward blue/cyan.
+    glow_luma = 0.2126 * glow[..., 0] + 0.7152 * glow[..., 1] + 0.0722 * glow[..., 2]
+    blended = (rgb + glow) / (1.0 + glow_luma[..., np.newaxis])
+    # Where the glow is zero the blend returns the pixel unchanged, so the rest
+    # of the image and untouched regions stay exact automatically.
+    return blended
+
+
+def bloom(
+    rgb: np.ndarray,
+    scale: float,
+    bloom_size: float = 1.0,
+    bloom_intensity: float = 1.0,
+    bloom_threshold: float = 0.8,
+    bloom_softness: float = 0.2,
+    bloom_red_factor: float = 1.0,
+    bloom_green_factor: float = 0.8,
+    bloom_blue_factor: float = 0.5,
+) -> np.ndarray:
+    """A bloom image processing effect.
+
+    Pixels above a luminance threshold emit a soft glow that is added back on top
+    of the image, brightening highlights and spilling light around them.
+    """
+    kernel = compute_halation_kernel(scale, bloom_size)
+    luma = 0.2126 * rgb[..., 0] + 0.7152 * rgb[..., 1] + 0.0722 * rgb[..., 2]
+
+    x = (luma - bloom_threshold) / max(bloom_softness, 1e-6)
+    emit = np.clip(x, 0.0, 1.0)
+    emit = emit * emit * (3.0 - 2.0 * emit)
+
+    glow = convolve_2d(rgb * emit[..., np.newaxis], kernel)
+    factors = bloom_intensity * np.array(
+        [bloom_red_factor, bloom_green_factor, bloom_blue_factor],
+        dtype=DEFAULT_DTYPE,
+    )
+    rgb = rgb + glow * factors
     return rgb
 
 
